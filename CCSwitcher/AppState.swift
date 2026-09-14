@@ -43,6 +43,68 @@ final class AppState: ObservableObject {
     private let claudeService = ClaudeService.shared
     private let statsParser = StatsParser.shared
     private let costParser = CostParser.shared
+
+    /// Sum the dev boxes' per-day costs into this Mac's. The two sources parse
+    /// different session directories, so dates overlap without double counting.
+    nonisolated static func merge(local: CostSummary,
+                                  remote: RemoteLedgerService.RemoteUsage?) -> CostSummary {
+        guard let remote, !remote.dailyCosts.isEmpty else { return local }
+        var byDate: [String: DailyCost] = [:]
+        for d in local.dailyCosts { byDate[d.date] = d }
+        for r in remote.dailyCosts {
+            if let existing = byDate[r.date] {
+                byDate[r.date] = DailyCost(
+                    date: r.date,
+                    totalCost: existing.totalCost + r.totalCost,
+                    modelBreakdown: existing.modelBreakdown.merging(r.modelBreakdown, uniquingKeysWith: +),
+                    sessionCount: existing.sessionCount,   // ledger has no session count
+                    inputTokens: existing.inputTokens + r.inputTokens,
+                    outputTokens: existing.outputTokens + r.outputTokens,
+                    cacheWriteTokens: existing.cacheWriteTokens + r.cacheWriteTokens,
+                    cacheReadTokens: existing.cacheReadTokens + r.cacheReadTokens)
+            } else {
+                byDate[r.date] = r
+            }
+        }
+        let todayKey: String = {
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+            return f.string(from: Date())
+        }()
+        let merged = byDate.values.sorted { $0.date > $1.date }
+        return CostSummary(todayCost: byDate[todayKey]?.totalCost ?? local.todayCost,
+                           dailyCosts: merged)
+    }
+
+    /// The activity panel counts MESSAGES per model locally; the ledger only
+    /// records TOKENS. Adding one to the other would invent a unit, so the
+    /// remote split is not merged here — `remoteModelTokens` exposes it
+    /// separately for a view that wants to show token share instead.
+    nonisolated static func mergeActivity(local: ActivityStats,
+                                          remote: RemoteLedgerService.RemoteUsage?) -> ActivityStats {
+        guard let remote else { return local }
+        let todayKey: String = {
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+            return f.string(from: Date())
+        }()
+        guard let todays = remote.dailyModelMessages[todayKey], !todays.isEmpty else { return local }
+        var stats = local
+        // Message counts on both sides, so this is a real sum rather than two
+        // different units added together.
+        for (model, count) in todays {
+            stats.modelUsage[model, default: 0] += count
+        }
+        return stats
+    }
+
+    /// "claude-fable-5-1" -> "Fable", matching the panel's four buckets.
+    nonisolated static func displayModelName(_ id: String) -> String {
+        let l = id.lowercased()
+        if l.contains("fable") { return "Fable" }
+        if l.contains("opus") { return "Opus" }
+        if l.contains("sonnet") { return "Sonnet" }
+        if l.contains("haiku") { return "Haiku" }
+        return ""
+    }
     private let activityParser = ActivityParser.shared
     private let keychain = KeychainService.shared
 
@@ -174,8 +236,12 @@ final class AppState: ObservableObject {
         await SessionParseCacheV2.shared.refreshFromFilesystem()
         let cost = await costParser.getCostSummary()
         let activity = await activityParser.getTodayStats()
-        costSummary = cost
-        activityStats = activity
+        // Fold the dev boxes in before publishing: the panels read one number,
+        // and a figure that silently meant "this Mac only" would be wrong now
+        // that the boxes are configured.
+        await RemoteHostsManager.shared.refreshLedger()
+        costSummary = Self.merge(local: cost, remote: RemoteHostsManager.shared.remoteUsage)
+        activityStats = Self.mergeActivity(local: activity, remote: RemoteHostsManager.shared.remoteUsage)
 
         log.info("[refresh] Usage: weekly=\(self.usageSummary.weeklyMessages) msgs, \(self.activeSessions.count) active sessions, today=$\(String(format: "%.2f", cost.todayCost)) turns=\(activity.conversationTurns)")
 

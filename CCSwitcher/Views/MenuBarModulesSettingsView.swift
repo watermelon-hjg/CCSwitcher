@@ -7,6 +7,19 @@ struct MenuBarModulesSettingsView: View {
     @AppStorage("showFullEmail") private var showFullEmail = false
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var config: MenuBarConfig
+    @ObservedObject private var remoteHosts = RemoteHostsManager.shared
+
+    /// The scoped model the active account is actually limited on ("Fable",
+    /// "Opus"…), used to name the scoped modules in this list.
+    private var scopedModelName: String? {
+        guard let id = appState.activeAccount?.id else { return nil }
+        guard let label = appState.accountUsage[id]?.scopedWindows.first?.label else { return nil }
+        // Labels arrive as "7d Fable" — strip the window prefix for the row name.
+        return label
+            .replacingOccurrences(of: "7d ", with: "")
+            .replacingOccurrences(of: "7D ", with: "")
+            .trimmingCharacters(in: .whitespaces)
+    }
 
     @State private var rows: [Row] = []
     @State private var tick: Date = Date()
@@ -29,13 +42,14 @@ struct MenuBarModulesSettingsView: View {
                             .toggleStyle(.checkbox)
                         Image(systemName: "line.3.horizontal")
                             .foregroundStyle(.tertiary)
-                        Text(row.module.localizedDisplayName)
+                        Text(row.module.localizedDisplayName(scopedModelName: scopedModelName))
                             .font(.callout)
                         Spacer(minLength: 8)
                         MenuBarModuleView(
                             module: row.module,
                             appState: appState,
                             config: config,
+                        remoteHosts: remoteHosts,
                             showFullEmail: showFullEmail,
                             tick: tick
                         )
@@ -89,6 +103,7 @@ struct MenuBarModulesSettingsView: View {
                     module: row.module,
                     appState: appState,
                     config: config,
+                        remoteHosts: remoteHosts,
                     showFullEmail: showFullEmail,
                     tick: tick
                 )

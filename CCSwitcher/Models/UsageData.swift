@@ -11,6 +11,12 @@ struct UsageAPIResponse: Codable {
     let sevenDayCowork: UsageWindow?
     let iguanaNecktie: UsageWindow?
     let extraUsage: ExtraUsage?
+    /// Modern generic shape: every limit bar the account has, session + weekly.
+    /// `kind == "weekly_scoped"` carries the plan-tier window (Fable, Opus…)
+    /// with its display name under `scope.model.display_name`.
+    let limits: [UsageLimit]?
+    /// Older normalized shape kept as a fallback.
+    let weeklyScoped: [ScopedUsageWindow]?
 
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
@@ -21,7 +27,88 @@ struct UsageAPIResponse: Codable {
         case sevenDayCowork = "seven_day_cowork"
         case iguanaNecktie = "iguana_necktie"
         case extraUsage = "extra_usage"
+        case limits
+        case weeklyScoped = "weekly_scoped"
     }
+
+    /// Plan-scoped weekly windows, newest API shape first, then the normalized
+    /// array, then the legacy fixed keys — so every account vintage renders.
+    var scopedWindows: [ScopedUsageWindow] {
+        if let limits {
+            let scoped = limits
+                .filter { $0.kind == "weekly_scoped" }
+                .map { ScopedUsageWindow(label: $0.derivedLabel,
+                                         utilization: $0.percent,
+                                         resetsAt: $0.resetsAt) }
+            if !scoped.isEmpty { return scoped }
+        }
+        if let weeklyScoped, !weeklyScoped.isEmpty { return weeklyScoped }
+        var legacy: [ScopedUsageWindow] = []
+        if let w = sevenDayOpus {
+            legacy.append(ScopedUsageWindow(label: "7d Opus", utilization: w.utilization, resetsAt: w.resetsAt))
+        }
+        if let w = sevenDaySonnet {
+            legacy.append(ScopedUsageWindow(label: "7d Sonnet", utilization: w.utilization, resetsAt: w.resetsAt))
+        }
+        return legacy
+    }
+}
+
+/// One entry of the API's generic `limits` array.
+struct UsageLimit: Codable {
+    let group: String?
+    let kind: String?
+    let percent: Double?
+    let resetsAt: String?
+    let severity: String?
+    let isActive: Bool?
+    let scope: UsageLimitScope?
+
+    enum CodingKeys: String, CodingKey {
+        case group, kind, percent, severity, scope
+        case resetsAt = "resets_at"
+        case isActive = "is_active"
+    }
+
+    /// "7d Fable" for a model-scoped weekly bar; a plain "7d" when the API
+    /// names no model. Never switch on this — it is display text only.
+    var derivedLabel: String {
+        if let name = scope?.model?.displayName, !name.isEmpty { return "7d \(name)" }
+        return "7d"
+    }
+}
+
+struct UsageLimitScope: Codable {
+    let model: UsageLimitModel?
+    let surface: String?
+}
+
+struct UsageLimitModel: Codable {
+    let displayName: String?
+    let id: String?
+
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case id
+    }
+}
+
+/// A plan-scoped weekly window carrying its own display label.
+struct ScopedUsageWindow: Codable, Identifiable {
+    let label: String
+    let utilization: Double?
+    let resetsAt: String?
+
+    var id: String { label }
+
+    enum CodingKeys: String, CodingKey {
+        case label
+        case utilization
+        case resetsAt = "resets_at"
+    }
+
+    /// Reuse `UsageWindow`'s date/countdown rendering without duplicating it.
+    var window: UsageWindow { UsageWindow(utilization: utilization, resetsAt: resetsAt) }
 }
 
 struct UsageWindow: Codable {

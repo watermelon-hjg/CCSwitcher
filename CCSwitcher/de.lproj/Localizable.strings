@@ -164,6 +164,8 @@
 "Account display" = "Kontoanzeige";
 "Session — usage vs time (5h)" = "Sitzung — Nutzung vs. Zeit (5 Std.)";
 "Weekly — usage vs time (7d)" = "Woche — Nutzung vs. Zeit (7 Tage)";
+"Plan window — usage vs time (7d scoped)" = "Plan-Fenster — Nutzung vs. Zeit (7 Tage, modellbezogen)";
+"Plan window usage (7d scoped)" = "Plan-Fenster-Nutzung (7 Tage, modellbezogen)";
 "The vertical line marks time elapsed in the window; fill past it means you're using faster than the clock." = "Die vertikale Linie zeigt die verstrichene Zeit; Füllung darüber hinaus = schneller als die Uhr verbraucht.";
 "Claude Fable 5 — most powerful model, the new flagship tier" = "Claude Fable 5 — leistungsstärkstes Modell, die neue Flaggschiff-Klasse";
 
@@ -178,3 +180,9 @@
 "Updated %@ ago" = "Aktualisiert vor %@";
 "Could not save the refreshed sign-in; will retry automatically." = "Aktualisierte Anmeldedaten konnten nicht gespeichert werden; es wird automatisch erneut versucht.";
 "Credential storage is temporarily unavailable. Try again shortly." = "Anmeldedaten-Speicher ist vorübergehend nicht verfügbar. Versuchen Sie es gleich erneut.";
+"%@ — usage vs time (7d)" = "%@ — Nutzung vs. Zeit (7 Tage)";
+"%@ usage (7d)" = "%@-Nutzung (7 Tage)";
+"Fable — flagship tier, the most powerful family" = "Fable — Flaggschiff-Klasse, leistungsstärkste Familie";
+"Opus — most capable for complex work" = "Opus — leistungsfähigste für komplexe Aufgaben";
+"Sonnet — balanced speed and capability" = "Sonnet — ausgewogene Geschwindigkeit und Leistung";
+"Haiku — fastest, best for simple tasks" = "Haiku — schnellste, optimal für einfache Aufgaben";

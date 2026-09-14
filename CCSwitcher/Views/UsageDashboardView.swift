@@ -137,13 +137,13 @@ struct UsageDashboardView: View {
             // Model usage row — same style as stats above
             HStack(spacing: 0) {
                 modelStat(name: "Fable", count: stats.modelUsage["Fable"] ?? 0,
-                          tooltip: "Claude Fable 5 — most powerful model, the new flagship tier")
+                          tooltip: "Fable — flagship tier, the most powerful family")
                 modelStat(name: "Opus", count: stats.modelUsage["Opus"] ?? 0,
-                          tooltip: "Claude Opus 4 — most capable model, best for complex tasks")
+                          tooltip: "Opus — most capable for complex work")
                 modelStat(name: "Sonnet", count: stats.modelUsage["Sonnet"] ?? 0,
-                          tooltip: "Claude Sonnet 4 — balanced speed and capability")
+                          tooltip: "Sonnet — balanced speed and capability")
                 modelStat(name: "Haiku", count: stats.modelUsage["Haiku"] ?? 0,
-                          tooltip: "Claude Haiku 4 — fastest model, best for simple tasks")
+                          tooltip: "Haiku — fastest, best for simple tasks")
             }
         }
         .cardStyle()
@@ -292,6 +292,18 @@ struct UsageDashboardView: View {
                 label: "Weekly",
                 resetText: weekly.resetTimeString,
                 utilization: weekly.utilization ?? 0,
+                kind: .weekly
+            )
+        }
+        // Plan-scoped windows (Max tiers get one, e.g. "7d Fable"). Pro accounts
+        // have none, so nothing renders for them.
+        ForEach(usage.scopedWindows) { scoped in
+            usageRow(
+                label: LocalizedStringKey(scoped.label
+                    .replacingOccurrences(of: "7d ", with: "")
+                    .replacingOccurrences(of: "7D ", with: "")),
+                resetText: scoped.window.resetTimeString,
+                utilization: scoped.utilization ?? 0,
                 kind: .weekly
             )
         }

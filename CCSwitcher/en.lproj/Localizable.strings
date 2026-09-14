@@ -168,6 +168,8 @@
 "Account display" = "Account display";
 "Session — usage vs time (5h)" = "Session — usage vs time (5h)";
 "Weekly — usage vs time (7d)" = "Weekly — usage vs time (7d)";
+"Plan window — usage vs time (7d scoped)" = "Plan window — usage vs time (7d scoped)";
+"Plan window usage (7d scoped)" = "Plan window usage (7d scoped)";
 "The vertical line marks time elapsed in the window; fill past it means you're using faster than the clock." = "The vertical line marks time elapsed in the window; fill past it means you're using faster than the clock.";
 "Claude Fable 5 — most powerful model, the new flagship tier" = "Claude Fable 5 — most powerful model, the new flagship tier";
 
@@ -182,3 +184,9 @@
 "Updated %@ ago" = "Updated %@ ago";
 "Could not save the refreshed sign-in; will retry automatically." = "Could not save the refreshed sign-in; will retry automatically.";
 "Credential storage is temporarily unavailable. Try again shortly." = "Credential storage is temporarily unavailable. Try again shortly.";
+"%@ — usage vs time (7d)" = "%@ — usage vs time (7d)";
+"%@ usage (7d)" = "%@ usage (7d)";
+"Fable — flagship tier, the most powerful family" = "Fable — flagship tier, the most powerful family";
+"Opus — most capable for complex work" = "Opus — most capable for complex work";
+"Sonnet — balanced speed and capability" = "Sonnet — balanced speed and capability";
+"Haiku — fastest, best for simple tasks" = "Haiku — fastest, best for simple tasks";

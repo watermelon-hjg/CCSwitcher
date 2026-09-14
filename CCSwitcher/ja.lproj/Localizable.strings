@@ -164,6 +164,8 @@
 "Account display" = "アカウント表示";
 "Session — usage vs time (5h)" = "セッション — 使用量 vs 時間（5時間）";
 "Weekly — usage vs time (7d)" = "週間 — 使用量 vs 時間（7日）";
+"Plan window — usage vs time (7d scoped)" = "プラン枠 — 使用量 vs 時間（7日・モデル別）";
+"Plan window usage (7d scoped)" = "プラン枠の使用量（7日・モデル別）";
 "The vertical line marks time elapsed in the window; fill past it means you're using faster than the clock." = "縦線 = 経過時間（その時間枠の進捗）。塗りつぶしがこれを超える = 時間より速く消費しています。";
 "Claude Fable 5 — most powerful model, the new flagship tier" = "Claude Fable 5 — 最も強力なモデル、新しいフラッグシップ層";
 
@@ -178,3 +180,9 @@
 "Updated %@ ago" = "%@前に更新";
 "Could not save the refreshed sign-in; will retry automatically." = "更新されたログイン情報を保存できませんでした。自動的に再試行します。";
 "Credential storage is temporarily unavailable. Try again shortly." = "認証情報ストレージは一時的に利用できません。しばらくしてからもう一度お試しください。";
+"%@ — usage vs time (7d)" = "%@ — 使用量 vs 時間（7日）";
+"%@ usage (7d)" = "%@ の使用量（7日）";
+"Fable — flagship tier, the most powerful family" = "Fable — フラッグシップ層、最も強力なモデル系列";
+"Opus — most capable for complex work" = "Opus — 複雑なタスクに最適";
+"Sonnet — balanced speed and capability" = "Sonnet — 速度と能力のバランス";
+"Haiku — fastest, best for simple tasks" = "Haiku — 最速、シンプルなタスクに最適";

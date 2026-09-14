@@ -15,6 +15,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // App starts as agent/accessory due to LSUIElement
     }
+
+    /// Close the dev boxes' SSH forwards on the way out — an orphaned `ssh -N`
+    /// would keep its local port bound and the next launch would have to move
+    /// off it.
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { SSHTunnelManager.shared.stopAll() }
+    }
 }
 
 @main
@@ -23,6 +30,7 @@ struct CCSwitcherApp: App {
     @StateObject private var appState = AppState()
     @StateObject private var updateChecker = UpdateChecker()
     @StateObject private var menuBarConfig = MenuBarConfig.shared
+    @StateObject private var remoteHosts = RemoteHostsManager.shared
     @AppStorage("refreshInterval") private var refreshInterval: Double = 300
     @AppStorage("appLanguage") private var appLanguage = "auto"
 
@@ -64,6 +72,7 @@ struct CCSwitcherApp: App {
                 .environmentObject(appState)
                 .environmentObject(updateChecker)
                 .environmentObject(menuBarConfig)
+                .environmentObject(remoteHosts)
                 .environment(\.locale, currentLocale)
         }
     }

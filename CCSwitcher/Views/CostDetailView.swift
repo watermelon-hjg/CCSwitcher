@@ -9,10 +9,28 @@ struct CostDetailView: View {
             VStack(spacing: 16) {
                 todayCard
                 periodSummaryCards
+                heatmapSection
                 dailyHistorySection
                 pricingInfoSection
             }
             .padding(.vertical, 12)
+        }
+    }
+
+    /// Merged Mac + dev-box activity. Hidden when there is nothing to draw, so
+    /// a user with no dev boxes configured never sees an empty grid.
+    @ViewBuilder
+    private var heatmapSection: some View {
+        if appState.costSummary.dailyCosts.count > 7 {
+            VStack(alignment: .leading, spacing: 8) {
+                ActivityHeatmapView(dailyCosts: appState.costSummary.dailyCosts)
+            }
+            .padding(12)
+            .background(.quaternary.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 12)
+            // No clipShape here on purpose: the heatmap's hover card is allowed
+            // to extend past this section's rounded background.
+            .zIndex(1)
         }
     }
 

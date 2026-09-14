@@ -7,6 +7,7 @@ struct MenuBarModuleView: View {
     let module: MenuBarModule
     let appState: AppState
     let config: MenuBarConfig
+    var remoteHosts: RemoteHostsManager = .shared
     let showFullEmail: Bool
     /// Tick value that recomputes reset countdowns once a minute.
     /// Passed in (and ignored by non-countdown modules) so the parent timer
@@ -31,7 +32,7 @@ struct MenuBarModuleView: View {
                 .fixedSize()
         } else {
             VStack(alignment: .center, spacing: 0) {
-                Text(module.compactLabel)
+                Text((module.usesScopedLabel ? scopedLabel : module.compactLabel))
                     .font(.system(size: 8, weight: .semibold))
                     .kerning(0.2)
                     .foregroundStyle(.primary)
@@ -80,6 +81,20 @@ struct MenuBarModuleView: View {
                 utilization: weeklyUtilization,
                 fillColor: config.limitBarColor(for: .weekly, utilization: weeklyUtilization, context: .menuBar)
             )
+
+        case .scopedBar:
+            UtilizationBar(
+                utilization: scopedUtilization,
+                markerPercent: scopedTimeElapsed,
+                fillColor: config.limitBarColor(for: .weekly, utilization: scopedUtilization, context: .menuBar)
+            )
+
+        case .scopedBarPlain:
+            UtilizationBar(
+                utilization: scopedUtilization,
+                fillColor: config.limitBarColor(for: .weekly, utilization: scopedUtilization, context: .menuBar)
+            )
+
 
         case .dailyCost:
             Text(dailyCostText)
@@ -131,6 +146,33 @@ struct MenuBarModuleView: View {
         guard let id = appState.activeAccount?.id else { return nil }
         return appState.accountUsage[id]?.sevenDay?
             .elapsedPercent(windowSeconds: RateLimitWindow.sevenDaySeconds)
+    }
+
+    /// The first plan-scoped weekly window, if the account has one.
+    /// Max tiers expose e.g. "7d fable"; Pro accounts expose none.
+    private var scopedWindow: ScopedUsageWindow? {
+        guard let id = appState.activeAccount?.id else { return nil }
+        return appState.accountUsage[id]?.scopedWindows.first
+    }
+
+    private var scopedUtilization: Double? { scopedWindow?.utilization }
+
+    private var scopedTimeElapsed: Double? {
+        _ = tick
+        return scopedWindow?.window
+            .elapsedPercent(windowSeconds: RateLimitWindow.sevenDaySeconds)
+    }
+
+    /// Top-line label: just the scoped model name, uppercased. The menu bar
+    /// cannot afford the window prefix, and the "7d" is already implied by the
+    /// module sitting next to the 5H / 7D bars ("7d Fable" -> "FABLE").
+    private var scopedLabel: String {
+        guard let label = scopedWindow?.label else { return module.compactLabel }
+        let name = label
+            .replacingOccurrences(of: "7d ", with: "")
+            .replacingOccurrences(of: "7D ", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? module.compactLabel : name.uppercased()
     }
 
     private var dailyCostText: String {

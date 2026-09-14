@@ -14,6 +14,10 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
     case dailyCost
     case sessionReset
     case weeklyReset
+    /// Plan-scoped weekly window (e.g. "7d fable", "7d Opus"). The label comes
+    /// from the API, so one module covers every plan tier.
+    case scopedBar
+    case scopedBarPlain
 
     var id: String { rawValue }
 
@@ -28,8 +32,17 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
         case .dailyCost:       return "TODAY"
         case .sessionReset:    return "5H↻"
         case .weeklyReset:     return "7D↻"
+        case .scopedBar:       return "7D*"
+        case .scopedBarPlain:  return "7D*"
         }
     }
+
+    /// True when the module renders the plan-scoped weekly window, whose top
+    /// label is replaced at render time by the API-supplied one.
+    var usesScopedLabel: Bool {
+        self == .scopedBar || self == .scopedBarPlain
+    }
+
 
     /// Human-readable name shown in the Settings reorder list.
     var localizedDisplayName: String {
@@ -42,6 +55,26 @@ enum MenuBarModule: String, Codable, CaseIterable, Identifiable {
         case .dailyCost:       return String(localized: "Daily cost", bundle: L10n.bundle)
         case .sessionReset:    return String(localized: "Session reset countdown", bundle: L10n.bundle)
         case .weeklyReset:     return String(localized: "Weekly reset countdown", bundle: L10n.bundle)
+        case .scopedBar:       return String(localized: "Plan window — usage vs time (7d scoped)", bundle: L10n.bundle)
+        case .scopedBarPlain:  return String(localized: "Plan window usage (7d scoped)", bundle: L10n.bundle)
+        }
+    }
+
+    /// Display name that names the account's actual scoped model when one is
+    /// known ("Fable usage (7d)"), so the settings row matches what the menu
+    /// bar renders. Falls back to the generic wording for accounts with no
+    /// scoped window (Pro) or before the first usage fetch lands.
+    func localizedDisplayName(scopedModelName: String?) -> String {
+        guard usesScopedLabel, let name = scopedModelName, !name.isEmpty else {
+            return localizedDisplayName
+        }
+        switch self {
+        case .scopedBar:
+            return String(format: String(localized: "%@ — usage vs time (7d)", bundle: L10n.bundle), name)
+        case .scopedBarPlain:
+            return String(format: String(localized: "%@ usage (7d)", bundle: L10n.bundle), name)
+        default:
+            return localizedDisplayName
         }
     }
 }

@@ -31,6 +31,14 @@ struct SettingsView: View {
                     Label("Claude CLI", systemImage: "terminal")
                 }
 
+            ScrollView {
+                RemoteHostsSettingsView()
+                    .padding(18)
+            }
+            .tabItem {
+                Label("Dev Boxes", systemImage: "server.rack")
+            }
+
             aboutTab
                 .tabItem {
                     Label("About", systemImage: "info.circle")

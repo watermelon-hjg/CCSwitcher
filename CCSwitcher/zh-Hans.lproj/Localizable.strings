@@ -77,7 +77,7 @@
 "Cache W" = "缓存写";
 "Cache R" = "缓存读";
 "%lld sessions" = "%lld 个会话";
-"%@ tokens" = "%@ 词元";
+"%@ tokens" = "%@ tokens";
 
 /* Account Switcher */
 "No Accounts" = "无账户";
@@ -164,6 +164,8 @@
 "Account display" = "账户显示";
 "Session — usage vs time (5h)" = "会话 — 用量 vs 时间（5小时）";
 "Weekly — usage vs time (7d)" = "每周 — 用量 vs 时间（7天）";
+"Plan window — usage vs time (7d scoped)" = "套餐窗口 — 用量 vs 时间（7天·分模型）";
+"Plan window usage (7d scoped)" = "套餐窗口用量（7天·分模型）";
 "The vertical line marks time elapsed in the window; fill past it means you're using faster than the clock." = "竖线 = 时间进度（该时段已过去多少）；填充超过它 = 你用得比时间快。";
 "Claude Fable 5 — most powerful model, the new flagship tier" = "Claude Fable 5 — 最强大的模型，全新旗舰层级";
 
@@ -178,3 +180,67 @@
 "Updated %@ ago" = "%@前更新";
 "Could not save the refreshed sign-in; will retry automatically." = "无法保存刷新后的登录凭据；将自动重试。";
 "Credential storage is temporarily unavailable. Try again shortly." = "凭据存储暂时不可用。请稍后重试。";
+"%@ — usage vs time (7d)" = "%@ — 用量 vs 时间（7天）";
+"%@ usage (7d)" = "%@ 用量（7天）";
+"Dev boxes — plan window" = "开发机 — 套餐窗口";
+"Dev boxes — session (5h)" = "开发机 — 会话（5小时）";
+"Dev boxes — weekly (7d)" = "开发机 — 每周（7天）";
+"Dev boxes (clauth)" = "开发机（clauth）";
+"Usage from remote clauth daemons, merged into one reading. Switch accounts on any box from here." = "来自远端 clauth 守护进程的用量，合并为一组读数。可在此切换任意机器的账号。";
+"No dev boxes configured." = "尚未配置开发机。";
+"Add dev box" = "添加开发机";
+"Edit dev box" = "编辑开发机";
+"Refresh now" = "立即刷新";
+"Trust new certificate" = "信任新证书";
+"Check certificate" = "检查证书";
+"Certificate fingerprint (SHA-256)" = "证书指纹（SHA-256）";
+"Bearer token" = "Bearer 令牌";
+"Host" = "主机";
+"Port" = "端口";
+"Name" = "名称";
+"Edit" = "编辑";
+"Remove" = "移除";
+"Save" = "保存";
+"Reading may be out of date" = "读数可能已过期";
+"Unreachable: %@" = "无法连接：%@";
+"Token rejected" = "令牌被拒绝";
+"Certificate changed — confirm to trust" = "证书已变更 — 需确认信任";
+"Bad response: %@" = "响应异常：%@";
+"Still needed: %@" = "还需填写：%@";
+"Could not read a certificate — check host, port and network." = "读不到证书 — 请检查主机、端口和网络。";
+"e.g. my dev box" = "例如：我的开发机";
+"IP or hostname" = "IP 或主机名";
+"paste from: clauth daemon --print-token" = "粘贴 clauth daemon --print-token 的输出";
+"Use example" = "用示例";
+"Tab to use example" = "按 Tab 采用示例";
+"Activity" = "活动";
+"less" = "少";
+"more" = "多";
+"busiest %@ · $%.0f" = "最忙 %@ · $%.0f";
+"%@ · no activity" = "%@ · 无活动";
+"resets" = "重置";
+"Dev boxes" = "开发机";
+"accounts differ" = "账号不一致";
+"connecting…" = "连接中…";
+"no activity" = "无活动";
+"retrying in %ds · attempt %d" = "%d 秒后重试 · 第 %d 次";
+"Fable — flagship tier, the most powerful family" = "Fable — 旗舰层级，最强模型系列";
+"Opus — most capable for complex work" = "Opus — 复杂任务能力最强";
+"Sonnet — balanced speed and capability" = "Sonnet — 速度与能力平衡";
+"Haiku — fastest, best for simple tasks" = "Haiku — 最快，适合简单任务";
+
+/* 开发机 — 自动检测 */
+"Fill in from an SSH alias" = "从 SSH 别名自动填充";
+"SSH alias" = "SSH 别名";
+"Detect" = "检测";
+"Reads the address, token and certificate over SSH, and works out whether a tunnel is needed." = "通过 SSH 读取地址、令牌和证书，并判断是否需要走隧道。";
+"Found %@ — reachable directly." = "已找到 %@ — 可直连。";
+"Found %@ — not reachable directly, so it will use an SSH tunnel." = "已找到 %@ — 无法直连，将通过 SSH 隧道访问。";
+"That address answers with a different certificate than the box's own daemon. Using a tunnel instead." = "该地址返回的证书与这台机器上 daemon 的不一致，已改用隧道。";
+"Connect over an SSH tunnel" = "通过 SSH 隧道连接";
+"For boxes whose ports are blocked from this Mac. CCSwitcher keeps an `ssh -L` forward open through the alias above." = "用于端口对本机封禁的开发机。CCSwitcher 会通过上面的别名维持一条 `ssh -L` 转发。";
+"Forwarded through the alias above to this Mac's 127.0.0.1:%d." = "通过上面的别名转发到本机 127.0.0.1:%d。";
+"SSH to this alias failed: %@" = "SSH 连接该别名失败：%@";
+"No clauth binary found on that box." = "这台机器上找不到 clauth 可执行文件。";
+"clauth is installed but its daemon is not listening on 8443." = "clauth 已安装，但它的 daemon 没有监听 8443。";
+"The box answered but did not return a usable token and certificate." = "机器有响应，但没返回可用的令牌和证书。";

@@ -22,6 +22,7 @@ struct MenuBarStripView: View {
     // view). We poll on a short interval instead.
     let appState: AppState
     let config: MenuBarConfig
+    var remoteHosts: RemoteHostsManager = .shared
     let onWidth: (CGFloat) -> Void
     @AppStorage("showFullEmail") private var showFullEmail = false
 
@@ -45,6 +46,7 @@ struct MenuBarStripView: View {
                     module: module,
                     appState: appState,
                     config: config,
+                    remoteHosts: remoteHosts,
                     showFullEmail: showFullEmail,
                     tick: tick
                 )
