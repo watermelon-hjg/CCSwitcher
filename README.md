@@ -62,38 +62,9 @@ CCSwitcher is a lightweight, pure menu bar macOS application designed to help de
 >   trusting whatever answers the port first.
 > - **Merged usage and cost.** Dev-box spend and message counts are aggregated on the box and
 >   shipped as a small JSON, then added to the cost and activity panels — the transcript store
->   itself is never synced. Boxes that share one sessions directory are read once rather than
->   summed, so their usage is not counted three times.
+>   itself is never synced.
 > - **Activity heatmap.** A GitHub-style contribution grid over the merged history, with per-day
->   detail on hover. Intensity is rank-based; linear bucketing put nearly every day in the
->   lightest shade.
-> - **A Dev Boxes settings tab.** Per-host status dot, a meter for every quota window, and — when
->   a box is unreachable — the reason plus a countdown to the next retry, so a machine that is
->   backing off reads as "retrying" rather than wedged. A changed certificate never retries on its
->   own; it waits for you to confirm the new fingerprint.
->
-> **Accuracy and upkeep**
->
-> - **Version-free model labels.** The model breakdown used to name specific versions
->   ("Claude Fable 5", "Opus 4"), which go stale with every release. It now names the family and
->   takes the rest from the API.
-> - **Remote costs priced from the live table.** Dev-box spend is priced through the app's
->   litellm-backed pricing service. The static fallback table has no entry for current ids such as
->   `claude-opus-5`, which silently priced them at zero.
-> - **Deduplicated token counts.** The remote aggregator keys on `messageId:requestId` and keeps
->   the largest output per key, matching what `ccusage` reports; without it, retried requests
->   inflated the totals several-hundred-fold. Days are bucketed in local time, not UTC, so today's
->   activity does not land on yesterday.
-> - **Localized throughout.** Every string added here is in the app's five bundled languages, with
->   Simplified Chinese fully translated.
->
-> Placeholder values in the dev box editor are generic in source and overridable per machine, so
-> nobody's real host names end up committed:
->
-> ```sh
-> defaults write me.xueshi.ccswitcher devBoxExampleAlias my-box
-> defaults write me.xueshi.ccswitcher devBoxExampleHost  10.1.2.3
-> ```
+>   detail on hover.
 >
 > Upstream has no license file, so neither does this fork.
 
