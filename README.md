@@ -19,6 +19,41 @@
 
 CCSwitcher is a lightweight, pure menu bar macOS application designed to help developers manage and switch between multiple Claude Code accounts **without interrupting your multi-account workflow**. The native `claude auth login` flow is destructive — every switch wipes the previous account's credentials and forces another full browser OAuth. CCSwitcher keeps a per-account backup of every credential, atomically swaps the keychain entry and `~/.claude.json` on switch, and all accounts stay available for one-click swap-back. CCSwitcher also monitors API usage, gracefully handles background token refreshes, and circumvents common macOS menu bar app limitations.
 
+
+> **About this fork**
+>
+> This is a fork of [XueshiQiao/CCSwitcher](https://github.com/XueshiQiao/CCSwitcher) that adds
+> **dev box support**: the upstream app reads the Mac it runs on, while this one also watches and
+> controls Claude Code accounts on remote machines and folds their usage into the same panels.
+>
+> - **Remote clauth daemons.** Each dev box runs [clauth](https://github.com/uwuclxdy/clauth)'s
+>   `daemon --listen`; CCSwitcher polls its REST API with ETag long-polling, so a switch made on
+>   any machine reaches the menu bar as fast as the network allows instead of on a fixed interval.
+>   Accounts can be switched on any box straight from the menu.
+> - **Certificate pinning.** The daemons' certificates are self-signed and per-host, so each one is
+>   pinned by SHA-256 fingerprint (trust-on-first-use, with an explicit confirmation step after a
+>   container rebuild). Bearer tokens live in the keychain, never in `UserDefaults`.
+> - **Supervised SSH tunnels.** Some boxes answer ICMP but have every TCP port blocked from
+>   outside their cluster, leaving the daemon unreachable at its own address even though it listens
+>   on `0.0.0.0`. Such a host can be reached through an `ssh -L` forward that the app keeps alive
+>   and rebuilds on its own. Local ports are probed before use — `ExitOnForwardFailure` only fires
+>   when *every* bind fails, so a port already taken on `127.0.0.1` otherwise leaves `ssh`
+>   listening on `::1` alone while the other process silently answers.
+> - **Add a box from its SSH alias.** One alias is enough: the address, bearer token and
+>   certificate are all read off the machine, and whether a tunnel is needed is settled by probing.
+>   The fingerprint arrives over the authenticated SSH channel, which is a stronger pin than
+>   trusting whatever answers the port first.
+> - **Merged usage and cost.** Dev-box spend and message counts are aggregated on the box and
+>   shipped as a small JSON, then added to the cost and activity panels — the transcript store
+>   itself is never synced.
+> - **Scoped quota windows.** The usage API's `limits[]` array is decoded, so model-scoped windows
+>   (Fable, Opus) show up next to the 5-hour and weekly ones.
+> - **Activity heatmap.** A GitHub-style contribution grid over the merged history, with per-day
+>   detail on hover. Intensity is rank-based; linear bucketing put nearly every day in the
+>   lightest shade.
+>
+> Upstream has no license file, so neither does this fork.
+
 ## Features
 
 - **Non-Interruptive Account Switching**: The native `claude auth logout` clears the current account's credentials, and switching back requires another full OAuth. CCSwitcher keeps a separate backup of each account (keychain token + `~/.claude.json` `oauthAccount` block), atomically swaps both on switch — every added account's credentials stay intact, one-click swap-back, no workflow interruption. (Note: an in-flight `claude` session will pick up the newly-switched credentials on its next API call — this is Claude CLI behavior, not something CCSwitcher controls.)
