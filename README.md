@@ -23,13 +23,30 @@ CCSwitcher is a lightweight, pure menu bar macOS application designed to help de
 > **About this fork**
 >
 > This is a fork of [XueshiQiao/CCSwitcher](https://github.com/XueshiQiao/CCSwitcher) that adds
-> **dev box support**: the upstream app reads the Mac it runs on, while this one also watches and
-> controls Claude Code accounts on remote machines and folds their usage into the same panels.
+> **dev box support** and **model-scoped quota windows**: the upstream app reads the Mac it runs
+> on and its 5-hour and weekly limits, while this one also watches and controls Claude Code
+> accounts on remote machines, and surfaces per-model windows such as Fable.
+>
+> **Model-scoped quota (Fable, Opus)**
+>
+> - **In the usage dashboard.** The usage API's `limits[]` array is decoded, so model-scoped
+>   windows appear as their own bars next to the 5-hour and weekly ones. The older fixed keys are
+>   kept as a fallback, but the API no longer populates them.
+> - **In the menu bar.** Two new modules (`7d scoped`, with and without the elapsed-time marker)
+>   put that window in the menu bar strip alongside the existing ones. Their label is taken from
+>   the API rather than hardcoded, so the readout says `FABLE` — or whatever window the account
+>   actually has — and falls back gracefully on a plan that has none.
+>
+> **Dev boxes**
 >
 > - **Remote clauth daemons.** Each dev box runs [clauth](https://github.com/uwuclxdy/clauth)'s
 >   `daemon --listen`; CCSwitcher polls its REST API with ETag long-polling, so a switch made on
 >   any machine reaches the menu bar as fast as the network allows instead of on a fixed interval.
->   Accounts can be switched on any box straight from the menu.
+>   Their windows are merged into one reading, with a warning when the boxes disagree about which
+>   account they are on.
+> - **Switching accounts remotely.** Every box's current account is shown in the menu and can be
+>   changed from there, without opening a shell on it. A switch waits on a cross-process lock on
+>   the box, so it is allowed tens of seconds and reports progress rather than appearing stuck.
 > - **Certificate pinning.** The daemons' certificates are self-signed and per-host, so each one is
 >   pinned by SHA-256 fingerprint (trust-on-first-use, with an explicit confirmation step after a
 >   container rebuild). Bearer tokens live in the keychain, never in `UserDefaults`.
@@ -45,12 +62,38 @@ CCSwitcher is a lightweight, pure menu bar macOS application designed to help de
 >   trusting whatever answers the port first.
 > - **Merged usage and cost.** Dev-box spend and message counts are aggregated on the box and
 >   shipped as a small JSON, then added to the cost and activity panels — the transcript store
->   itself is never synced.
-> - **Scoped quota windows.** The usage API's `limits[]` array is decoded, so model-scoped windows
->   (Fable, Opus) show up next to the 5-hour and weekly ones.
+>   itself is never synced. Boxes that share one sessions directory are read once rather than
+>   summed, so their usage is not counted three times.
 > - **Activity heatmap.** A GitHub-style contribution grid over the merged history, with per-day
 >   detail on hover. Intensity is rank-based; linear bucketing put nearly every day in the
 >   lightest shade.
+> - **A Dev Boxes settings tab.** Per-host status dot, a meter for every quota window, and — when
+>   a box is unreachable — the reason plus a countdown to the next retry, so a machine that is
+>   backing off reads as "retrying" rather than wedged. A changed certificate never retries on its
+>   own; it waits for you to confirm the new fingerprint.
+>
+> **Accuracy and upkeep**
+>
+> - **Version-free model labels.** The model breakdown used to name specific versions
+>   ("Claude Fable 5", "Opus 4"), which go stale with every release. It now names the family and
+>   takes the rest from the API.
+> - **Remote costs priced from the live table.** Dev-box spend is priced through the app's
+>   litellm-backed pricing service. The static fallback table has no entry for current ids such as
+>   `claude-opus-5`, which silently priced them at zero.
+> - **Deduplicated token counts.** The remote aggregator keys on `messageId:requestId` and keeps
+>   the largest output per key, matching what `ccusage` reports; without it, retried requests
+>   inflated the totals several-hundred-fold. Days are bucketed in local time, not UTC, so today's
+>   activity does not land on yesterday.
+> - **Localized throughout.** Every string added here is in the app's five bundled languages, with
+>   Simplified Chinese fully translated.
+>
+> Placeholder values in the dev box editor are generic in source and overridable per machine, so
+> nobody's real host names end up committed:
+>
+> ```sh
+> defaults write me.xueshi.ccswitcher devBoxExampleAlias my-box
+> defaults write me.xueshi.ccswitcher devBoxExampleHost  10.1.2.3
+> ```
 >
 > Upstream has no license file, so neither does this fork.
 
