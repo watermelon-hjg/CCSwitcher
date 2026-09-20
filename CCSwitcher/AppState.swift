@@ -815,6 +815,26 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Wait for the CLI to actually write a renewed credential.
+    ///
+    /// `claude auth status` answers as soon as it knows the session's state and
+    /// writes the renewed credential afterwards — observed ~17s later, since
+    /// that write waits on an OAuth round trip. Reading once, immediately, gets
+    /// the old value back and looks exactly like a refusal to renew.
+    private func awaitCredentialChange(from previous: String, timeout: TimeInterval) async -> String? {
+        let previousToken = ClaudeService.extractAccessToken(from: previous)
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let current = keychain.readClaudeToken(),
+               let token = ClaudeService.extractAccessToken(from: current),
+               token != previousToken {
+                return current
+            }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        return nil
+    }
+
     /// Connection-level failures worth one more attempt. Deliberately narrow:
     /// anything that might mean the request was actually answered stays fatal.
     private static func isTransient(_ error: URLError) -> Bool {
@@ -838,13 +858,11 @@ final class AppState: ObservableObject {
             // Delegated refresh: `claude auth status` lets the CLI rotate its own
             // credential, with no keychain swap to race a running session.
             guard (try? await claudeService.getAuthStatus()) != nil else { return nil }
-            guard let reread = keychain.readClaudeToken() else { return nil }
-            guard ClaudeService.extractAccessToken(from: reread)
-                    != ClaudeService.extractAccessToken(from: current) else {
-                log.warning("[fetchUsage] Delegated refresh returned the same token for \(account.email); not retrying")
+            guard let renewed = await awaitCredentialChange(from: current, timeout: 30) else {
+                log.warning("[fetchUsage] Credential unchanged 30s after delegated refresh for \(account.email)")
                 return nil
             }
-            return reread
+            return renewed
         }
         switch await refreshBackupInPlace(for: account) {
         case .refreshed(let renewed): return renewed
@@ -1059,9 +1077,8 @@ final class AppState: ObservableObject {
                         // healthy without necessarily renewing it, and retrying
                         // with the same expired token was what earned this
                         // account an hour-long 429 every cycle.
-                        if let refreshedJSON = keychain.readClaudeToken(),
+                        if let refreshedJSON = await awaitCredentialChange(from: tokenJSON, timeout: 30),
                            let refreshedToken = ClaudeService.extractAccessToken(from: refreshedJSON),
-                           refreshedToken != accessToken,
                            let usage = await usageRespectingParking(accessToken: refreshedToken, account: account) {
                             accountUsage[account.id] = usage
                             accountUsageSampledAt[account.id] = Date()
