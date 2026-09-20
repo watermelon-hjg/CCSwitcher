@@ -379,6 +379,66 @@ final class ClaudeService: @unchecked Sendable {
         return accessToken
     }
 
+    /// When this credential's access token stops being accepted, if it says.
+    ///
+    /// Worth checking before spending a request: the usage endpoint answers an
+    /// expired token with 401, and a second 401 within the same moment trips an
+    /// authentication-failure limiter that replies `Retry-After: 3600`. One
+    /// avoidable request can therefore cost an hour of readings.
+    static func expiresAt(from tokenJSON: String) -> Date? {
+        guard let data = tokenJSON.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let oauth = json["claudeAiOauth"] as? [String: Any],
+              let ms = oauth["expiresAt"] as? Double else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: ms / 1000)
+    }
+
+    // MARK: - Subscription tier
+
+    /// The account's real plan, preferring the server-fetched profile over what
+    /// the credential says about itself.
+    ///
+    /// `claude auth status` reports `subscriptionType` straight out of the OAuth
+    /// credential, which is stamped when that credential is minted and never
+    /// rewritten — a refresh does not touch it. An account that was Pro at login
+    /// and upgraded later therefore keeps reporting "pro" indefinitely, while
+    /// `~/.claude.json`'s `oauthAccount` block carries the profile the server
+    /// re-fetches and shows the plan actually in force.
+    ///
+    /// That block describes whichever account is live, so it is only consulted
+    /// when it is about the same account as `status`.
+    func effectiveSubscriptionType(reported: String?, email: String?) -> String? {
+        guard let profile = KeychainService.shared.readOAuthAccount() else { return reported }
+        if let email, let profileEmail = profile["emailAddress"]?.value as? String,
+           profileEmail.compare(email, options: .caseInsensitive) != .orderedSame {
+            return reported
+        }
+        let tier = profile["organizationRateLimitTier"]?.value as? String
+        let orgType = profile["organizationType"]?.value as? String
+        return Self.planName(rateLimitTier: tier, organizationType: orgType) ?? reported
+    }
+
+    /// `default_claude_max_20x` -> "max 20x", `claude_max` -> "max".
+    ///
+    /// Returns nil for anything that does not name a plan — `default_claude_ai`
+    /// is the generic tier every consumer account carries and says nothing — so
+    /// the caller can fall back rather than display a worse answer.
+    static func planName(rateLimitTier: String?, organizationType: String?) -> String? {
+        func strip(_ raw: String?) -> String? {
+            guard var v = raw?.lowercased() else { return nil }
+            for prefix in ["default_claude_", "claude_"] where v.hasPrefix(prefix) {
+                v = String(v.dropFirst(prefix.count))
+                break
+            }
+            // "ai" is the plain consumer tier; it does not distinguish a plan.
+            guard !v.isEmpty, v != "ai" else { return nil }
+            return v.replacingOccurrences(of: "_", with: " ")
+        }
+        return strip(rateLimitTier) ?? strip(organizationType)
+    }
+
     // MARK: - Account Switching
 
     /// Result of a completed switch.

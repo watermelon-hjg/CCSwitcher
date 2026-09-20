@@ -300,7 +300,7 @@ final class AppState: ObservableObject {
                 displayName: status.orgName ?? email,
                 provider: .claudeCode,
                 orgName: status.orgName,
-                subscriptionType: status.subscriptionType,
+                subscriptionType: claudeService.effectiveSubscriptionType(reported: status.subscriptionType, email: status.email),
                 isActive: accounts.isEmpty
             )
             log.info("[addAccount] Created account model, id=\(account.id)")
@@ -415,7 +415,7 @@ final class AppState: ObservableObject {
                 displayName: status.orgName ?? email,
                 provider: .claudeCode,
                 orgName: status.orgName,
-                subscriptionType: status.subscriptionType,
+                subscriptionType: claudeService.effectiveSubscriptionType(reported: status.subscriptionType, email: status.email),
                 isActive: true
             )
             log.info("[loginNewAccount] Step 5: Created account, id=\(account.id)")
@@ -756,7 +756,7 @@ final class AppState: ObservableObject {
             // fail while the UI claimed everything was refreshed.
             if let index = accounts.firstIndex(where: { $0.id == account.id }) {
                 accounts[index].orgName = status.orgName
-                accounts[index].subscriptionType = status.subscriptionType
+                accounts[index].subscriptionType = claudeService.effectiveSubscriptionType(reported: status.subscriptionType, email: status.email)
 
                 // Mark this account as active (it's what the CLI is now using)
                 for i in accounts.indices {
@@ -794,6 +794,14 @@ final class AppState: ObservableObject {
     private func fetchUsageWithRetry(accessToken: String) async throws -> UsageAPIResponse {
         do {
             return try await claudeService.getUsageLimits(accessToken: accessToken)
+        } catch let error as URLError where Self.isTransient(error) {
+            // A dropped connection is not an answer about this account. Local
+            // proxies (Clash and friends) fail a small share of connections, and
+            // surfacing that as "couldn't fetch usage" hides a perfectly good
+            // reading for the whole polling cycle.
+            log.warning("[fetchUsage] Transient network error (\(error.code.rawValue)); retrying once in 3s")
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            return try await claudeService.getUsageLimits(accessToken: accessToken)
         } catch ClaudeService.UsageError.rateLimited(let retryAfter) {
             let delay = retryAfter ?? 15
             guard delay <= 30 else {
@@ -804,6 +812,43 @@ final class AppState: ObservableObject {
             log.warning("[fetchUsage] Rate-limited, retrying in \(String(format: "%.0f", max(delay, 3)))s...")
             try? await Task.sleep(nanoseconds: UInt64(max(delay, 3) * 1_000_000_000))
             return try await claudeService.getUsageLimits(accessToken: accessToken)
+        }
+    }
+
+    /// Connection-level failures worth one more attempt. Deliberately narrow:
+    /// anything that might mean the request was actually answered stays fatal.
+    private static func isTransient(_ error: URLError) -> Bool {
+        switch error.code {
+        case .secureConnectionFailed, .networkConnectionLost, .cannotConnectToHost,
+             .timedOut, .notConnectedToInternet, .dnsLookupFailed,
+             .cannotFindHost, .resourceUnavailable:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Renew a credential that has already expired, before any request is sent.
+    ///
+    /// Returns the new credential JSON, or nil when nothing could renew it —
+    /// including the case where the delegated refresh reports success but hands
+    /// back the same token, which is not a renewal and must not be retried.
+    private func renewedCredential(for account: Account, current: String) async -> String? {
+        if account.isActive {
+            // Delegated refresh: `claude auth status` lets the CLI rotate its own
+            // credential, with no keychain swap to race a running session.
+            guard (try? await claudeService.getAuthStatus()) != nil else { return nil }
+            guard let reread = keychain.readClaudeToken() else { return nil }
+            guard ClaudeService.extractAccessToken(from: reread)
+                    != ClaudeService.extractAccessToken(from: current) else {
+                log.warning("[fetchUsage] Delegated refresh returned the same token for \(account.email); not retrying")
+                return nil
+            }
+            return reread
+        }
+        switch await refreshBackupInPlace(for: account) {
+        case .refreshed(let renewed): return renewed
+        case .grantRejected, .noBackup, .rotationLost, .storeUnavailable: return nil
         }
     }
 
@@ -941,10 +986,29 @@ final class AppState: ObservableObject {
             } else {
                 tokenJSON = keychain.getAccountBackup(forAccountId: account.id.uuidString)?.token
             }
-            guard let tokenJSON, let accessToken = ClaudeService.extractAccessToken(from: tokenJSON) else {
+            guard var tokenJSON, var accessToken = ClaudeService.extractAccessToken(from: tokenJSON) else {
                 log.warning("[fetchUsage] No token for \(account.email), skipping")
                 continue
             }
+
+            // Spend no request on a credential that already says it is expired.
+            // The endpoint answers those with 401, and a second 401 moments later
+            // trips an authentication-failure limiter whose Retry-After is a full
+            // hour — so one wasted request costs this account every reading until
+            // the next hour is up.
+            if let expiry = ClaudeService.expiresAt(from: tokenJSON), expiry <= Date() {
+                log.info("[fetchUsage] \(account.email) credential expired at \(expiry); refreshing before asking")
+                guard let renewed = await renewedCredential(for: account, current: tokenJSON),
+                      let renewedToken = ClaudeService.extractAccessToken(from: renewed) else {
+                    accountUsage[account.id] = nil
+                    accountUsageSampledAt[account.id] = nil
+                    accountUsageErrors[account.id] = UsageErrorState(isExpired: true, isRateLimited: false, message: String(localized: "Token expired. Switch to refresh.", bundle: L10n.bundle))
+                    continue
+                }
+                tokenJSON = renewed
+                accessToken = renewedToken
+            }
+
             do {
                 let usage = try await fetchUsageWithRetry(accessToken: accessToken)
                 accountUsage[account.id] = usage
@@ -977,9 +1041,14 @@ final class AppState: ObservableObject {
                     do {
                         _ = try await claudeService.getAuthStatus()
                         log.info("[fetchUsage] Delegated refresh completed for active account.")
-                        // Re-read refreshed token and retry
+                        // Re-read, and only retry if the credential actually
+                        // changed. `claude auth status` reports the session as
+                        // healthy without necessarily renewing it, and retrying
+                        // with the same expired token was what earned this
+                        // account an hour-long 429 every cycle.
                         if let refreshedJSON = keychain.readClaudeToken(),
                            let refreshedToken = ClaudeService.extractAccessToken(from: refreshedJSON),
+                           refreshedToken != accessToken,
                            let usage = await usageRespectingParking(accessToken: refreshedToken, account: account) {
                             accountUsage[account.id] = usage
                             accountUsageSampledAt[account.id] = Date()
@@ -1136,7 +1205,7 @@ final class AppState: ObservableObject {
                 accounts[i].isActive = (i == index)
             }
             accounts[index].orgName = status.orgName
-            accounts[index].subscriptionType = status.subscriptionType
+            accounts[index].subscriptionType = claudeService.effectiveSubscriptionType(reported: status.subscriptionType, email: status.email)
             activeAccount = accounts[index]
             saveAccounts()
             log.info("[updateActiveAccount] Matched existing account at index \(index)")
@@ -1146,7 +1215,7 @@ final class AppState: ObservableObject {
                 displayName: status.orgName ?? email,
                 provider: .claudeCode,
                 orgName: status.orgName,
-                subscriptionType: status.subscriptionType,
+                subscriptionType: claudeService.effectiveSubscriptionType(reported: status.subscriptionType, email: status.email),
                 isActive: true
             )
             accounts.append(account)
