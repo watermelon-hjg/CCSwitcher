@@ -420,6 +420,24 @@ final class ClaudeService: @unchecked Sendable {
         return Self.planName(rateLimitTier: tier, organizationType: orgType) ?? reported
     }
 
+    /// The plan a stored credential names, if it names one.
+    ///
+    /// For an account that is not active there is no live profile to consult —
+    /// `~/.claude.json` only ever describes the account currently signed in — so
+    /// this is the best source available without spending a request. It is
+    /// stamped when the credential is minted, so it is right for an account that
+    /// has not changed plan since, and silent (nil) when it carries only the
+    /// generic consumer tier.
+    static func planName(fromCredential tokenJSON: String) -> String? {
+        guard let data = tokenJSON.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let oauth = json["claudeAiOauth"] as? [String: Any] else {
+            return nil
+        }
+        return planName(rateLimitTier: oauth["rateLimitTier"] as? String,
+                        organizationType: nil)
+    }
+
     /// `default_claude_max_20x` -> "max 20x", `claude_max` -> "max".
     ///
     /// Returns nil for anything that does not name a plan — `default_claude_ai`

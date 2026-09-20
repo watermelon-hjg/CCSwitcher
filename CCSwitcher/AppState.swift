@@ -991,6 +991,19 @@ final class AppState: ObservableObject {
                 continue
             }
 
+            // A non-active account has no live profile to read its plan from, so
+            // take what its own credential names. The active account is left
+            // alone: its tier already came from the server-fetched profile,
+            // which is fresher than anything stamped into a credential.
+            if !account.isActive,
+               let named = ClaudeService.planName(fromCredential: tokenJSON),
+               let index = accounts.firstIndex(where: { $0.id == account.id }),
+               accounts[index].subscriptionType != named {
+                log.info("[fetchUsage] \(account.email) plan: \(accounts[index].subscriptionType ?? "nil") -> \(named)")
+                accounts[index].subscriptionType = named
+                saveAccounts()
+            }
+
             // Spend no request on a credential that already says it is expired.
             // The endpoint answers those with 401, and a second 401 moments later
             // trips an authentication-failure limiter whose Retry-After is a full
