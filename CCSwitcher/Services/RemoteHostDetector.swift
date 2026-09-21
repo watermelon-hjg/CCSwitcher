@@ -74,6 +74,28 @@ enum RemoteHostDetector {
           | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':')"
     """
 
+    /// The certificate the daemon is serving, read on the box itself.
+    ///
+    /// Independent of the TLS connection being judged: it arrives over SSH,
+    /// whose host key authenticates the machine. That makes it usable as a
+    /// second opinion when a pinned fingerprint stops matching.
+    static func fingerprintOverSSH(alias: String) async -> String? {
+        let script = """
+        openssl s_client -connect 127.0.0.1:8443 </dev/null 2>/dev/null \
+          | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2 | tr -d ':'
+        """
+        guard let out = try? await runSSH(alias: alias, script: script) else { return nil }
+        let value = out.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        return value.count == 64 ? value : nil
+    }
+
+    /// The box's current primary address, for keeping the stored one in step.
+    static func addressOverSSH(alias: String) async -> String? {
+        guard let out = try? await runSSH(alias: alias, script: "hostname -I | awk '{print $1}'") else { return nil }
+        let value = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
     static func detect(alias: String) async throws -> Detected {
         let output = try await runSSH(alias: alias, script: probeScript)
         var fields: [String: String] = [:]

@@ -197,12 +197,48 @@ final class RemoteHostsManager: ObservableObject {
                 if host.useSSHTunnel, fails % 2 == 0 {
                     SSHTunnelManager.shared.recycle(host: host)
                 }
-                // A changed certificate never heals on its own — it needs the
-                // user to confirm the new fingerprint — so stop hammering it.
-                if err.isCertificateMismatch { return }
+                // A changed certificate needs confirming before it is trusted,
+                // but that confirmation does not have to be manual: these boxes
+                // get rescheduled, and clauth re-issues its self-signed
+                // certificate — new key and all — to cover the new address. Ask
+                // the machine itself over SSH, whose host key already
+                // authenticates it, and accept the new fingerprint only if it
+                // agrees. Anything else still stops and waits for the user.
+                if err.isCertificateMismatch {
+                    await reconcileCertificate(host: host)
+                    return
+                }
                 try? await Task.sleep(for: delay)
             }
         }
+    }
+
+    /// Re-pin a host whose certificate changed, when an independent channel
+    /// vouches for the new one. Re-pinning restarts this host's polling; if
+    /// nothing vouches for it, the host stays stopped and waits for the user.
+    private func reconcileCertificate(host: RemoteHost) async {
+        guard let onBox = await RemoteHostDetector.fingerprintOverSSH(alias: host.effectiveSSHAlias) else {
+            log.error("[\(host.name, privacy: .public)] certificate changed and SSH could not confirm the new one")
+            return
+        }
+        guard let presented = await RemoteClauthService.probeFingerprint(host: host) else {
+            log.error("[\(host.name, privacy: .public)] certificate changed and the daemon could not be re-probed")
+            return
+        }
+        guard presented == onBox else {
+            // The machine serves one certificate and something else is
+            // answering with another. That is the case pinning exists for.
+            log.error("[\(host.name, privacy: .public)] certificate MISMATCH: served \(presented, privacy: .public), box says \(onBox, privacy: .public)")
+            return
+        }
+        guard var updated = hosts.first(where: { $0.id == host.id }) else { return }
+        log.info("[\(host.name, privacy: .public)] certificate re-issued; confirmed over SSH, re-pinning")
+        updated.pinnedFingerprint = onBox
+        // Keep the recorded address in step: it changes for the same reason.
+        if let detected = await RemoteHostDetector.addressOverSSH(alias: host.effectiveSSHAlias) {
+            updated.host = detected
+        }
+        updateHost(updated)
     }
 
     /// Pull the token ledger from the first reachable box. One ledger covers
