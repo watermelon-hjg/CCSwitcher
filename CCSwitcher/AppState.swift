@@ -815,6 +815,12 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Consecutive cycles where a renewal was asked for and had not landed by
+    /// the time we looked. Reset by any successful reading.
+    private var credentialRenewMisses: [UUID: Int] = [:]
+    /// Three cycles (~15 min) before an in-flight renewal is called an expiry.
+    private static let renewMissesBeforeError = 3
+
     /// Wait for the CLI to actually write a renewed credential.
     ///
     /// `claude auth status` answers as soon as it knows the session's state and
@@ -1031,11 +1037,23 @@ final class AppState: ObservableObject {
                 log.info("[fetchUsage] \(account.email) credential expired at \(expiry); refreshing before asking")
                 guard let renewed = await renewedCredential(for: account, current: tokenJSON),
                       let renewedToken = ClaudeService.extractAccessToken(from: renewed) else {
-                    accountUsage[account.id] = nil
-                    accountUsageSampledAt[account.id] = nil
-                    accountUsageErrors[account.id] = UsageErrorState(isExpired: true, isRateLimited: false, message: String(localized: "Token expired. Switch to refresh.", bundle: L10n.bundle))
+                    // A renewal that has not landed yet is not a broken session.
+                    // The CLI's refresh is an OAuth round trip that has been seen
+                    // to take minutes on a slow link, so the last good reading is
+                    // kept — with its honest "updated Xm ago" — and only repeated
+                    // misses are reported as an expiry the user must act on.
+                    let misses = (credentialRenewMisses[account.id] ?? 0) + 1
+                    credentialRenewMisses[account.id] = misses
+                    if misses >= Self.renewMissesBeforeError {
+                        accountUsage[account.id] = nil
+                        accountUsageSampledAt[account.id] = nil
+                        accountUsageErrors[account.id] = UsageErrorState(isExpired: true, isRateLimited: false, message: String(localized: "Token expired. Switch to refresh.", bundle: L10n.bundle))
+                    } else {
+                        log.info("[fetchUsage] \(account.email) renewal still in flight (miss \(misses)); keeping last reading")
+                    }
                     continue
                 }
+                credentialRenewMisses[account.id] = 0
                 tokenJSON = renewed
                 accessToken = renewedToken
             }
@@ -1045,6 +1063,7 @@ final class AppState: ObservableObject {
                 accountUsage[account.id] = usage
                 accountUsageSampledAt[account.id] = Date()
                 accountUsageErrors[account.id] = nil
+                credentialRenewMisses[account.id] = 0
                 log.info("[fetchUsage] \(account.email): session=\(usage.fiveHour?.utilization ?? -1)%, weekly=\(usage.sevenDay?.utilization ?? -1)%")
             } catch ClaudeService.UsageError.forbidden {
                 // No active Pro/Max subscription on this account (e.g. the plan
