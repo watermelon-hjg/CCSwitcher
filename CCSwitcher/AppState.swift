@@ -859,20 +859,38 @@ final class AppState: ObservableObject {
     /// Returns the new credential JSON, or nil when nothing could renew it —
     /// including the case where the delegated refresh reports success but hands
     /// back the same token, which is not a renewal and must not be retried.
-    private func renewedCredential(for account: Account, current: String) async -> String? {
+    /// Why a renewal did not produce a usable credential.
+    private enum Renewal {
+        case renewed(String)
+        /// Not in hand yet, but it may still land — worth another cycle.
+        case pending
+        /// The grant is finished. Only re-authentication fixes this, so there is
+        /// nothing to wait for and saying "try again" would be a lie.
+        case dead
+    }
+
+    private func renewedCredential(for account: Account, current: String) async -> Renewal {
         if account.isActive {
             // Delegated refresh: `claude auth status` lets the CLI rotate its own
             // credential, with no keychain swap to race a running session.
-            guard (try? await claudeService.getAuthStatus()) != nil else { return nil }
+            // A failed `claude auth status` is usually the CLI being busy or the
+            // network being down, not a finished grant.
+            guard (try? await claudeService.getAuthStatus()) != nil else { return .pending }
             guard let renewed = await awaitCredentialChange(from: current, timeout: 30) else {
                 log.warning("[fetchUsage] Credential unchanged 30s after delegated refresh for \(account.email)")
-                return nil
+                return .pending
             }
-            return renewed
+            return .renewed(renewed)
         }
         switch await refreshBackupInPlace(for: account) {
-        case .refreshed(let renewed): return renewed
-        case .grantRejected, .noBackup, .rotationLost, .storeUnavailable: return nil
+        case .refreshed(let renewed):
+            return .renewed(renewed)
+        case .grantRejected, .rotationLost, .noBackup:
+            // The refresh token is dead, or its rotation was lost, or there is
+            // no credential to renew at all. None of those heal on their own.
+            return .dead
+        case .storeUnavailable:
+            return .pending
         }
     }
 
@@ -1035,7 +1053,18 @@ final class AppState: ObservableObject {
             // the next hour is up.
             if let expiry = ClaudeService.expiresAt(from: tokenJSON), expiry <= Date() {
                 log.info("[fetchUsage] \(account.email) credential expired at \(expiry); refreshing before asking")
-                guard let renewed = await renewedCredential(for: account, current: tokenJSON),
+                let renewal = await renewedCredential(for: account, current: tokenJSON)
+                if case .dead = renewal {
+                    // Nothing to wait for: report it now, and name the action
+                    // that actually fixes it.
+                    log.warning("[fetchUsage] \(account.email) grant is finished; re-authentication required")
+                    credentialRenewMisses[account.id] = 0
+                    accountUsage[account.id] = nil
+                    accountUsageSampledAt[account.id] = nil
+                    accountUsageErrors[account.id] = UsageErrorState(isExpired: true, isRateLimited: false, message: String(localized: "Session expired. Re-authenticate (↻) to fix.", bundle: L10n.bundle))
+                    continue
+                }
+                guard case .renewed(let renewed) = renewal,
                       let renewedToken = ClaudeService.extractAccessToken(from: renewed) else {
                     // A renewal that has not landed yet is not a broken session.
                     // The CLI's refresh is an OAuth round trip that has been seen
