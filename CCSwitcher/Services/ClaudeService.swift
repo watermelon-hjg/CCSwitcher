@@ -580,14 +580,110 @@ final class ClaudeService: @unchecked Sendable {
     }
 
     /// Run `claude auth login` which opens browser for OAuth.
+    /// How long a browser sign-in may take before the attempt is abandoned.
+    private static let loginTimeout: TimeInterval = 300
+
     func login() async throws {
+        // A login left over from an earlier attempt holds the loopback port the
+        // CLI redirects back to, and a new sign-in then fails within seconds.
+        // One such process was found still waiting four days later.
+        sweepStaleLogins(reason: "before starting a new sign-in")
+
         log.info("[login] Starting `claude auth login`... (will open browser)")
-        _ = try await runClaude(args: ["auth", "login"])
+        defer {
+            // Whatever happened — finished, failed, timed out — leave nothing
+            // behind to block the next attempt.
+            sweepStaleLogins(reason: "after the sign-in attempt")
+        }
+        _ = try await runClaudeLogin()
         log.info("[login] `claude auth login` process exited")
 
         // Give keychain a moment to sync after CLI writes
         try await Task.sleep(for: .seconds(1))
         log.info("[login] Post-login delay complete, ready for token capture")
+    }
+
+    /// Kill any `claude auth login` still running. Safe to call before starting
+    /// one of our own; never call it while ours is in flight.
+    private func sweepStaleLogins(reason: String) {
+        let pgrep = Process()
+        pgrep.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        pgrep.arguments = ["-f", "claude auth login"]
+        let out = Pipe()
+        pgrep.standardOutput = out
+        pgrep.standardError = Pipe()
+        guard (try? pgrep.run()) != nil else { return }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        pgrep.waitUntilExit()
+
+        let pids = String(decoding: data, as: UTF8.self)
+            .split(whereSeparator: \.isNewline)
+            .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+        guard !pids.isEmpty else { return }
+        log.warning("[login] Clearing \(pids.count) stale sign-in process(es) \(reason)")
+        for pid in pids { kill(pid, SIGTERM) }
+    }
+
+    /// `claude auth login`, with a real stdin and a deadline.
+    ///
+    /// Two differences from `runClaude`. The child gets its own stdin pipe: the
+    /// CLI offers a paste-the-code fallback and reads from stdin, and inheriting
+    /// a GUI app's empty stdin is not the same as having none. And the attempt
+    /// is bounded — a sign-in nobody completes must not leave a process waiting
+    /// indefinitely.
+    private func runClaudeLogin() async throws -> String {
+        let claudePath = self.claudePath
+        log.debug("[runClaudeLogin] Running: \(claudePath) auth login")
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { [claudePath] in
+                let process = Process()
+                let pipe = Pipe()
+                let stdin = Pipe()
+
+                process.executableURL = URL(fileURLWithPath: claudePath)
+                process.arguments = ["auth", "login"]
+                process.standardOutput = pipe
+                process.standardError = pipe
+                process.standardInput = stdin
+                process.environment = Self.childEnvironment(claudePath: claudePath)
+
+                var timedOut = false
+                let watchdog = DispatchWorkItem {
+                    if process.isRunning {
+                        timedOut = true
+                        process.terminate()
+                    }
+                }
+                DispatchQueue.global().asyncAfter(deadline: .now() + Self.loginTimeout,
+                                                  execute: watchdog)
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    watchdog.cancel()
+                    try? stdin.fileHandleForWriting.close()
+
+                    let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(),
+                                        as: UTF8.self)
+                    if timedOut {
+                        log.error("[runClaudeLogin] Timed out after \(Int(Self.loginTimeout))s")
+                        continuation.resume(throwing: ClaudeServiceError.cliError("sign-in timed out"))
+                    } else if process.terminationStatus == 0 {
+                        log.debug("[runClaudeLogin] Success (exit 0), output length: \(output.count)")
+                        continuation.resume(returning: output)
+                    } else {
+                        // The CLI's own words are the only clue to why, so keep them.
+                        let detail = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                        log.error("[runClaudeLogin] Failed (exit \(process.terminationStatus)): \(detail.suffix(300))")
+                        continuation.resume(throwing: ClaudeServiceError.cliError("exit \(process.terminationStatus)"))
+                    }
+                } catch {
+                    watchdog.cancel()
+                    log.error("[runClaudeLogin] Process launch failed: \(error.localizedDescription)")
+                    continuation.resume(throwing: ClaudeServiceError.processLaunchFailed(error))
+                }
+            }
+        }
     }
 
     /// Run `claude auth logout`
@@ -712,6 +808,31 @@ final class ClaudeService: @unchecked Sendable {
 
     // MARK: - CLI Runner
 
+    /// Environment for a spawned `claude`, shared by every call site.
+    ///
+    /// A GUI app's PATH does not include the usual install locations, and an
+    /// NVM-installed CLI needs `node` alongside it — so the binary's own
+    /// directory (symlinks resolved) goes first.
+    private static func childEnvironment(claudePath: String) -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        let homeDir = NSHomeDirectory()
+        var extraPaths = [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "\(homeDir)/.local/bin",
+            "\(homeDir)/.npm-global/bin"
+        ]
+        if claudePath.contains("/") {
+            let resolved = URL(fileURLWithPath: claudePath).resolvingSymlinksInPath().path
+            let resolvedBinDir = URL(fileURLWithPath: resolved).deletingLastPathComponent().path
+            extraPaths.insert(resolvedBinDir, at: 0)
+        }
+        let existingPath = env["PATH"] ?? "/usr/bin:/bin"
+        env["PATH"] = (extraPaths + [existingPath]).joined(separator: ":")
+        env["HOME"] = homeDir
+        return env
+    }
+
     private func runClaude(args: [String]) async throws -> String {
         let claudePath = self.claudePath
         log.debug("[runClaude] Running: \(claudePath) \(args.joined(separator: " "))")
@@ -725,28 +846,7 @@ final class ClaudeService: @unchecked Sendable {
                 process.standardOutput = pipe
                 process.standardError = pipe
 
-                var env = ProcessInfo.processInfo.environment
-                let homeDir = NSHomeDirectory()
-                // Include the parent directory of the discovered claude binary
-                // so that `node` is on PATH for NVM-installed scripts.
-                // Only add it when claudePath is absolute (skip the bare "claude" fallback).
-                var extraPaths = [
-                    "/opt/homebrew/bin",
-                    "/usr/local/bin",
-                    "\(homeDir)/.local/bin",
-                    "\(homeDir)/.npm-global/bin"
-                ]
-                if claudePath.contains("/") {
-                    // Resolve symlinks so that e.g. /usr/local/bin/claude -> ~/.nvm/.../bin/claude
-                    // yields the NVM bin dir where `node` actually lives
-                    let resolved = URL(fileURLWithPath: claudePath).resolvingSymlinksInPath().path
-                    let resolvedBinDir = URL(fileURLWithPath: resolved).deletingLastPathComponent().path
-                    extraPaths.insert(resolvedBinDir, at: 0)
-                }
-                let existingPath = env["PATH"] ?? "/usr/bin:/bin"
-                env["PATH"] = (extraPaths + [existingPath]).joined(separator: ":")
-                env["HOME"] = homeDir
-                process.environment = env
+                process.environment = Self.childEnvironment(claudePath: claudePath)
 
                 do {
                     try process.run()
