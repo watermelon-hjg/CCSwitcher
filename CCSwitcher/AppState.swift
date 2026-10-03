@@ -1094,15 +1094,23 @@ final class AppState: ObservableObject {
                 accountUsageErrors[account.id] = nil
                 credentialRenewMisses[account.id] = 0
                 log.info("[fetchUsage] \(account.email): session=\(usage.fiveHour?.utilization ?? -1)%, weekly=\(usage.sevenDay?.utilization ?? -1)%")
-            } catch ClaudeService.UsageError.forbidden {
-                // No active Pro/Max subscription on this account (e.g. the plan
-                // lapsed) - usage is meaningless until it recovers. Observed as:
-                // {"error":{"type":"permission_error","message":"OAuth
-                // authentication is currently not allowed for this organization."}}
-                log.warning("[fetchUsage] \(account.email) forbidden (no active subscription?)")
+            } catch ClaudeService.UsageError.forbidden(let body) {
+                // 403 covers two unrelated conditions, and naming the wrong one
+                // sends the reader to their billing page over a network fault.
+                let reason = ClaudeService.ForbiddenReason.classify(body)
+                let message: String
+                switch reason {
+                case .subscription:
+                    message = String(localized: "No active subscription on this account (OAuth not allowed).", bundle: L10n.bundle)
+                case .blocked:
+                    // Every account fails at once in this case, because it is
+                    // the connection being refused rather than the account.
+                    message = String(localized: "Request blocked by the network. Check your proxy or VPN.", bundle: L10n.bundle)
+                }
+                log.warning("[fetchUsage] \(account.email) 403 (\(reason == .subscription ? "subscription" : "network-blocked"))")
                 accountUsage[account.id] = nil
                 accountUsageSampledAt[account.id] = nil
-                accountUsageErrors[account.id] = UsageErrorState(isExpired: false, isRateLimited: false, message: String(localized: "No active subscription on this account (OAuth not allowed).", bundle: L10n.bundle))
+                accountUsageErrors[account.id] = UsageErrorState(isExpired: false, isRateLimited: false, message: message)
             } catch ClaudeService.UsageError.rateLimited(let retryAfter) {
                 // Rate-limited: park the account until the server-given deadline
                 // and keep the last known sample - a stale percentage carrying

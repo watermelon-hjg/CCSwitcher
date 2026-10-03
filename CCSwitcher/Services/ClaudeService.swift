@@ -395,6 +395,31 @@ final class ClaudeService: @unchecked Sendable {
         return Date(timeIntervalSince1970: ms / 1000)
     }
 
+    /// What a 403 on the usage endpoint is actually saying.
+    ///
+    /// Two very different conditions share the status code, and treating both as
+    /// a lapsed subscription sends the reader looking at their billing page when
+    /// the real problem is the network path.
+    enum ForbiddenReason {
+        /// The organization cannot use OAuth — typically no active plan.
+        /// `{"error":{"type":"permission_error","message":"OAuth authentication
+        /// is currently not allowed for this organization."}}`
+        case subscription
+        /// The edge refused the request itself, before the account was weighed:
+        /// `{"error":{"type":"forbidden","message":"Request not allowed"}}`.
+        /// Seen when the egress address is not accepted — a proxy switched off,
+        /// a VPN dropped, a blocked network.
+        case blocked
+
+        static func classify(_ body: String) -> ForbiddenReason {
+            let lower = body.lowercased()
+            if lower.contains("permission_error") || lower.contains("organization") {
+                return .subscription
+            }
+            return .blocked
+        }
+    }
+
     // MARK: - Subscription tier
 
     /// The account's real plan, preferring the server-fetched profile over what

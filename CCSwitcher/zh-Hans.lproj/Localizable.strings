@@ -244,3 +244,5 @@
 "No clauth binary found on that box." = "这台机器上找不到 clauth 可执行文件。";
 "clauth is installed but its daemon is not listening on 8443." = "clauth 已安装，但它的 daemon 没有监听 8443。";
 "The box answered but did not return a usable token and certificate." = "机器有响应，但没返回可用的令牌和证书。";
+
+"Request blocked by the network. Check your proxy or VPN." = "请求被网络拦截，请检查代理或 VPN。";
