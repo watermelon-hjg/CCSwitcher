@@ -373,7 +373,11 @@ final class ClaudeService: @unchecked Sendable {
         guard let data = tokenJSON.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let oauth = json["claudeAiOauth"] as? [String: Any],
-              let accessToken = oauth["accessToken"] as? String else {
+              let accessToken = oauth["accessToken"] as? String,
+              // An emptied credential keeps its keys and blanks their values.
+              // Returning "" here would send `Authorization: Bearer ` and spend
+              // a request to be told what the empty string already said.
+              !accessToken.isEmpty else {
             return nil
         }
         return accessToken
@@ -389,7 +393,10 @@ final class ClaudeService: @unchecked Sendable {
         guard let data = tokenJSON.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let oauth = json["claudeAiOauth"] as? [String: Any],
-              let ms = oauth["expiresAt"] as? Double else {
+              let ms = oauth["expiresAt"] as? Double,
+              // Zero is absence, not the epoch. Reporting "expired at
+              // 1970-01-01" is worse than admitting the credential does not say.
+              ms > 0 else {
             return nil
         }
         return Date(timeIntervalSince1970: ms / 1000)

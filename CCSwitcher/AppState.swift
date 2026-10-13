@@ -1029,7 +1029,13 @@ final class AppState: ObservableObject {
                 tokenJSON = keychain.getAccountBackup(forAccountId: account.id.uuidString)?.token
             }
             guard var tokenJSON, var accessToken = ClaudeService.extractAccessToken(from: tokenJSON) else {
-                log.warning("[fetchUsage] No token for \(account.email), skipping")
+                // No usable credential at all — an emptied or never-written
+                // store entry. Nothing will renew it, so say what fixes it
+                // rather than leaving the row blank every cycle.
+                log.warning("[fetchUsage] \(account.email) has no usable credential; re-authentication required")
+                accountUsage[account.id] = nil
+                accountUsageSampledAt[account.id] = nil
+                accountUsageErrors[account.id] = UsageErrorState(isExpired: true, isRateLimited: false, message: String(localized: "Session expired. Re-authenticate (↻) to fix.", bundle: L10n.bundle))
                 continue
             }
 
